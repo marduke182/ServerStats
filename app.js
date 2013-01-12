@@ -20,147 +20,36 @@ var error = clc.red.bold;
 var warn = clc.yellow;
 var notice = clc.blue.bold;
 
-
 var Schema = mongoose.Schema
 , ObjectId = Schema.ObjectId;
 
-var CookieSchema = new Schema({
-    cookie: {
-        type: String
+
+
+var StatsSchema = new Schema({
+    heartRate: {
+        type: Array
     },
-    created: {
+    temp: {
+        type: Array
+    },
+    date: {
         type: Date
     }
 });
 
-function validatePresenceOf(value) {
-    return value && value.length;
-}
-
-var UserSchema = new Schema({
-    name: {
-        type: String, 
-        index: {
-            unique: true
-        }
-    },
-    login: {
-        type: String
-    },
-    hashed_password: {
-        type: String
-    },
-    salt: {
-        type: String
-    },
-    redmineKey: {
-        type: String
-    },
-    img: {
-        type: String
-    },
-    sessions: {
-        type: [CookieSchema]
-    }
-});
-
-UserSchema.virtual('id')
-    .get(function() {
-        return this._id.toHexString();
-    });
-
-UserSchema.virtual('password')
-    .set(function(password) {
-        this._password = password;
-        this.salt = this.makeSalt();
-        this.hashed_password = this.encryptPassword(password);
-    })
-    .get(function() {
-        return this._password;
-    });
-
-UserSchema.method('authenticate', function(plainText) {
-    return this.encryptPassword(plainText) === this.hashed_password;
-});
-
-UserSchema.method('makeSalt', function() {
-    return Math.round((new Date().valueOf() * Math.random())) + '';
-});
-
-UserSchema.method('encryptPassword', function(password) {
-    return crypto.createHmac('sha1', this.salt).update(password).digest('hex');
-});
-
-UserSchema.pre('save', function(next) {
-    if (!validatePresenceOf(this.password)) {
-        next(new Error('Invalid password'));
-    } else {
-        next();
-    }
-});
-
-var ProyectSchema = new Schema({
-    name: {
-        type: String
-    },
-    idRedmine: {
-        type: String
-    }
-});
-
-var ActivitySchema = new Schema({
-    name: {
-        type: String
-    },
-    idProyect: {
-        type: String
-    },
-    idRedmine: {
-        type: String
-    }
-});
-
-var TimeSchema = new Schema({
-    name: {
-        type: String
-    },        
-    idProyect: {
-        type: String
-    },
-    idActivity: {
-        type: String
-    }
-});
-
-mongoose.model('User', UserSchema);
-mongoose.model('Proyect', ProyectSchema);
-mongoose.model('Activity', ActivitySchema);
-mongoose.model('Time', TimeSchema);
+mongoose.model('Stats', StatsSchema);
 
 
-var serverDb = mongoose.createConnection("127.0.0.1","redmine", 27017, function(err) {
+
+var serverDb = mongoose.createConnection("127.0.0.1","stats", 27017, function(err) {
     if(err instanceof Error) {
         console.log("Ocurrio un error.");
     }
 });
 
 
-var User = serverDb.model('User');
-var Proyect = serverDb.model('Proyect');
-var Activity = serverDb.model('Activity');
-var Time = serverDb.model('Time');
-//
-//var instance = new User();
-//
-//instance.name = "jesus";
-//instance.password = "123456";
-//
-//instance.save(function(err) {
-//    // 
-//    if(err instanceof Error) {
-//        console.log(error("Ocurrio un error."));
-//    }
-//});
+var Stats = serverDb.model('Stats');
+
 
 
 var app = express();
@@ -173,82 +62,138 @@ app.configure(function(){
     app.use(express.logger('dev'));
     app.use(express.bodyParser());
     app.use(express.methodOverride());
-//    app.use(express.cookieDecoder());
+    //    app.use(express.cookieDecoder());
     app.use(express.cookieParser('your secret here'));
     app.use(express.session());
     app.use(app.router);
     app.use(express.static(__dirname + '/public'));
-    app.use(function(err, req, res, next){
-      // if an error occurs Connect will pass it down
-      // through these "error-handling" middleware
-      // allowing you to respond however you like
-      err.
-        res.send("fuck my dick");
-    })
+//    app.use(function(err, req, res, next){
+//
+//        
+//        res.send("fuck my dick");
+//    })
 });
 
 app.configure('development', function(){
     app.use(express.errorHandler());
 });
 
-function requireLogin(req, res, next) {
-    if(req.session.user) {
+function onlyApllicationJson(req, res, next) {
+    if(req.is('application/json')) {
         next();
       
     } else {
-        res.redirect("/sessions/new?redir="+req.url);
+        res.send({
+            msg:"Content Type Ivalido", 
+            code: "invalid_conten_type"
+        });
     }
 };
 
-app.get('/', requireLogin, routes.index);
+app.post('/hr',onlyApllicationJson,function(req,res) {
+    estadisticas = req.body;
+    console.log(estadisticas);
 
-app.get('/sessions/new', function(req,res) {
-    res.render('sessions/new', {
-        redir: req.body.redir
-    });
+    if(estadisticas == undefined)
+        res.send({
+            msg:"Datos invalidos", 
+            code: "invalid_data_error"
+        });
+    retorno = {
+        msg: "prueba", 
+        code: "OK"
+    };
+    var instance = new Stats();
 
-});
 
+    instance.heartRate = estadisticas;
+    instance.temp = [];
+    instance.date = Date.now();
 
-
-app.post('/sessions', function(req,res) {
-    User.findOne({
-        name: req.body.login
-    }, function(err,user){
-        
+    instance.save(function(err) {
         if(err instanceof Error) {
-            console.log("Ocurrio un error buscando el usuario");   
-        } else if(user && user.authenticate(req.body.password)){
-            
-            
-            req.session.user = true;
-            res.redirect(req.body.redir || "/");
-
-        } else {
-            //            req.flash('error', 'Incorrect credentials');
-            res.render('sessions/new', {
-                redir: req.body.redir
+            console.log(error("Ocurrio un error."));
+            res.send({
+                msg:"Cannot save in database", 
+                code: "database_error"
             });
-        //          res.redirect('/sessions/new');
+        } else {
+            res.send(retorno);
         }
-
     });
 });
 
-app.use('/prueba',function(req,res) {
-    console.log(req.body.user);
-    res.send("asd");
-});
-
-app.use('/account/create', function(req, res) {
+app.post('/temp',onlyApllicationJson,function(req,res) {
+    console.log(req.body);
     
-    if(req.method == "POST") {
-        
-    }
+    estadisticas = req.body;
+    if(estadisticas == undefined)
+        res.send({
+            msg:"Datos invalidos", 
+            code: "invalid_data_error"
+        });
+    retorno = {
+        msg: "prueba", 
+        code: "OK"
+    };
+    var instance = new Stats();
 
-    res.render('sessions/new', {
-        redir: req.body.redir
+
+    instance.heartRate = [];
+    instance.temp = estadisticas;
+    instance.date = Date.now();
+
+    instance.save(function(err) {
+        if(err instanceof Error) {
+            console.log(error("Ocurrio un error."));
+            res.send({
+                msg:"Cannot save in database", 
+                code: "database_error"
+            });
+        } else {
+            res.send(retorno);
+        }
     });
+    
+    
+});
+
+app.post('/all',onlyApllicationJson,function(req,res) {
+    console.log(req.body);
+    
+    estadisticas = req.body;
+    console.log(estadisticas);
+    if(estadisticas == undefined || estadisticas.temp == undefined || estadisticas.temp == undefined )
+        res.send({
+            msg:"Datos invalidos", 
+            code: "invalid_data_error"
+        });
+
+    
+    retorno = {
+        msg: "prueba", 
+        code: "OK"
+    };
+    var instance = new Stats();
+
+
+    instance.heartRate = estadisticas.hr;
+    instance.temp = estadisticas.tmp;
+    instance.date = Date.now();
+
+    instance.save(function(err) {
+        if(err instanceof Error) {
+            console.log(error("Ocurrio un error."));
+            res.send({
+                msg:"Cannot save in database", 
+                code: "database_error"
+            });
+        } else {
+            res.send(retorno);
+        }
+    });
+    
+    
 });
 
 http.createServer(app).listen(app.get('port'), function(){
